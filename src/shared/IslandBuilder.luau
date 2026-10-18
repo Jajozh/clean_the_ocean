@@ -1,11 +1,13 @@
 -- Строит остров v2 (хаб, 6 баз, берег, пальмы) и океан в Workspace. Идемпотентно: build() можно вызывать повторно.
 -- В edit-режиме Studio require кэширует модуль: чтобы перестроить после правок, вызывай build() из Clone() модуля (у клона свой кэш).
--- Запуск: командная строка Studio, require(game.ReplicatedStorage.Shared.IslandBuilder):Clone() -> require(клон).build()
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- Перестройка в edit-режиме: клонируй папку Shared и вызови require(клон.IslandBuilder).build().
+-- Зависимости берём рядом с модулем (script.Parent), а не по пути ReplicatedStorage.Shared:
+-- тогда клон всей папки Shared целиком получает свежий кэш require.
+local Shared = script.Parent
 
-local Config = require(ReplicatedStorage.Shared.Config.Island)
-local Layout = require(ReplicatedStorage.Shared.Layout).new(Config)
-local Shape = require(ReplicatedStorage.Shared.IslandShape).new(Config, Layout)
+local Config = require(Shared.Config.Island)
+local Layout = require(Shared.Layout).new(Config)
+local Shape = require(Shared.IslandShape).new(Config, Layout)
 
 local GROUND_Y = 2 -- верх песка (рельеф 0); Layout считает от y = 0, всё остальное стоит на этой высоте
 local FLOOR_TOP_Y = GROUND_Y + 0.2 -- выше песка, иначе поверхности мерцают (z-fighting)
