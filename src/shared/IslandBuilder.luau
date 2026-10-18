@@ -56,9 +56,11 @@ local function build()
 	end
 
 	local function addLabel(part: Part, text: string)
-		local gui = Instance.new("BillboardGui")
-		gui.Size = UDim2.fromOffset(160, 40)
-		gui.StudsOffset = Vector3.new(0, 4, 0)
+		-- Надпись на верхней грани самой модели, а не над ней.
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = Enum.NormalId.Top
+		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		gui.PixelsPerStud = 50
 		gui.Adornee = part
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.fromScale(1, 1)
@@ -66,7 +68,7 @@ local function build()
 		label.TextScaled = true
 		label.Font = Enum.Font.GothamBold
 		label.TextColor3 = Color3.new(1, 1, 1)
-		label.TextStrokeTransparency = 0
+		label.TextStrokeTransparency = 0.3
 		label.Text = text
 		label.Parent = gui
 		gui.Parent = part
