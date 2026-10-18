@@ -1,4 +1,4 @@
--- Контракт раскладки: базы полукругом вокруг хаба лицом к воде. Layout не использует Roblox API.
+-- Контракт раскладки v3: базы по дуге лицом к фокусу F в плавательной зоне. Layout не использует Roblox API.
 local harness = require("./harness")
 local cfg = require("../src/shared/Config/Island")
 local Layout = require("../src/shared/Layout")
@@ -58,12 +58,23 @@ local function count(slotType: string)
 	return n
 end
 
-test("bases: all at distance R from the hub, at the configured angles", function()
+local function focus()
+	return { x = cfg.Hub.x, z = cfg.Hub.z + cfg.Arc.R }
+end
+
+local function inSwim(x: number, z: number)
+	local w = layout:swim()
+	return x >= w.minX and x <= w.maxX and z >= w.minZ and z <= w.maxZ
+end
+
+test("bases: on the arc around F at the configured angles", function()
+	local f = focus()
+	assert(#cfg.Arc.Angles == cfg.MaxPlayers)
 	for i = 1, cfg.MaxPlayers do
 		local p = layout:basePosition(i)
-		local t = math.rad(cfg.Arc.FirstDeg + (i - 1) * cfg.Arc.StepDeg)
-		assert(math.abs(p.x - (cfg.Hub.x + cfg.Arc.R * math.sin(t))) < EPS, "x of base " .. i)
-		assert(math.abs(p.z - (cfg.Hub.z + cfg.Arc.R * math.cos(t))) < EPS, "z of base " .. i)
+		local a = math.rad(cfg.Arc.Angles[i])
+		assert(math.abs(p.x - (f.x + cfg.Arc.R * math.sin(a))) < EPS, "x of base " .. i)
+		assert(math.abs(p.z - (f.z - cfg.Arc.R * math.cos(a))) < EPS, "z of base " .. i)
 		assert(p.y == 0)
 	end
 end)
@@ -71,7 +82,7 @@ end)
 test("bases: arc is symmetric around the hub axis", function()
 	for i = 1, cfg.MaxPlayers do
 		local a, b = layout:basePosition(i), layout:basePosition(cfg.MaxPlayers + 1 - i)
-		assert(math.abs(a.x - cfg.Hub.x + (b.x - cfg.Hub.x)) < EPS and math.abs(a.z - b.z) < EPS)
+		assert(math.abs((a.x - cfg.Hub.x) + (b.x - cfg.Hub.x)) < EPS and math.abs(a.z - b.z) < EPS)
 	end
 end)
 
@@ -80,20 +91,22 @@ test("bases: index out of range is rejected", function()
 	assert(not pcall(layout.basePosition, layout, cfg.MaxPlayers + 1))
 end)
 
-test("bases: front is a unit vector pointing away from the hub", function()
+test("bases: front is a unit vector pointing at F", function()
+	local f = focus()
 	for i = 1, cfg.MaxPlayers do
-		local p, f = layout:basePosition(i), layout:baseFront(i)
-		assert(math.abs(f.x * f.x + f.z * f.z - 1) < EPS)
-		local dx, dz = p.x - cfg.Hub.x, p.z - cfg.Hub.z
+		local p, fr = layout:basePosition(i), layout:baseFront(i)
+		assert(math.abs(fr.x * fr.x + fr.z * fr.z - 1) < EPS)
+		local dx, dz = f.x - p.x, f.z - p.z
 		local len = math.sqrt(dx * dx + dz * dz)
-		assert(math.abs(f.x * dx / len + f.z * dz / len - 1) < EPS, "base " .. i .. " does not face outward")
+		assert(math.abs(fr.x * dx / len + fr.z * dz / len - 1) < EPS, "base " .. i .. " does not face F")
 	end
 end)
 
-test("bases: yaw turns local +Z into the front (Roblox CFrame.Angles(0, yaw, 0))", function()
+test("bases: yaw = -angle turns local +Z into the front (Roblox CFrame.Angles(0, yaw, 0))", function()
 	for i = 1, cfg.MaxPlayers do
-		local f, yaw = layout:baseFront(i), layout:baseYaw(i)
-		assert(math.abs(math.sin(yaw) - f.x) < EPS and math.abs(math.cos(yaw) - f.z) < EPS)
+		local fr, yaw = layout:baseFront(i), layout:baseYaw(i)
+		assert(math.abs(yaw + math.rad(cfg.Arc.Angles[i])) < EPS)
+		assert(math.abs(math.sin(yaw) - fr.x) < EPS and math.abs(math.cos(yaw) - fr.z) < EPS)
 	end
 end)
 
@@ -108,7 +121,7 @@ test("bases: footprints do not overlap each other or hub buildings", function()
 	end
 end)
 
-test("hub: Shop and Upgrades exist, sit around the hub and do not overlap", function()
+test("hub: Shop and Upgrades sit between the two middle bases and do not overlap", function()
 	local list = layout:hubBuildings()
 	assert(#list == 2)
 	local byId = {}
@@ -118,6 +131,48 @@ test("hub: Shop and Upgrades exist, sit around the hub and do not overlap", func
 	assert(byId.Shop and byId.Upgrades)
 	assert(byId.Shop.x == cfg.Hub.x + cfg.HubBuildings[1].x and byId.Shop.z == cfg.Hub.z + cfg.HubBuildings[1].z)
 	assert(not overlap(hubRect(cfg.HubBuildings[1]), hubRect(cfg.HubBuildings[2])))
+	local mid = cfg.MaxPlayers // 2
+	local left, right = layout:basePosition(mid), layout:basePosition(mid + 1)
+	for _, b in list do
+		assert(b.x - b.sizeX / 2 > left.x and b.x + b.sizeX / 2 < right.x, b.id .. " is not between the middle bases")
+	end
+end)
+
+test("swim: rectangle from the config, F is inside it", function()
+	local w, f = layout:swim(), focus()
+	assert(w.minX == -cfg.Swim.HalfWidth and w.maxX == cfg.Swim.HalfWidth)
+	assert(w.minZ == cfg.Swim.NorthZ and w.maxZ == cfg.Swim.NorthZ + cfg.Swim.Length)
+	assert(inSwim(f.x, f.z), "F is not in the swim zone")
+end)
+
+test("swim: no base corner, spawn or hub building is in the water", function()
+	for i = 1, cfg.MaxPlayers do
+		local r = baseRect(i)
+		for _, sx in { -1, 1 } do
+			for _, sz in { -1, 1 } do
+				local x = r.cx + r.axes[1][1] * r.half[1] * sx + r.axes[2][1] * r.half[2] * sz
+				local z = r.cz + r.axes[1][2] * r.half[1] * sx + r.axes[2][2] * r.half[2] * sz
+				assert(not inSwim(x, z), "base " .. i .. " touches the water")
+			end
+		end
+		local s = layout:spawnPosition(i)
+		assert(not inSwim(s.x, s.z), "spawn " .. i .. " is in the water")
+	end
+	for _, b in layout:hubBuildings() do
+		assert(not inSwim(b.x, b.z))
+	end
+end)
+
+test("swim: from every spawn, walking forward reaches the water soon", function()
+	for i = 1, cfg.MaxPlayers do
+		local s, fr = layout:spawnPosition(i), layout:baseFront(i)
+		local d = 0
+		while not inSwim(s.x + fr.x * d, s.z + fr.z * d) do
+			d += 1
+			assert(d <= cfg.MaxWalkToWater, ("base %d: no water within %d studs"):format(i, cfg.MaxWalkToWater))
+		end
+		assert(d >= 3, ("base %d: spawn is at the water edge (%d)"):format(i, d))
+	end
 end)
 
 test("slots: required counts, no Shop on the base anymore", function()
@@ -188,7 +243,7 @@ test("spawn: in front of the base, SpawnOffset past its front edge", function()
 end)
 
 test("ocean: deep enough and wide enough", function()
-	assert(cfg.Ocean.Depth > 0 and cfg.Ocean.Half > cfg.Arc.R + cfg.Base.Depth + cfg.Beach)
+	assert(cfg.Ocean.Depth > 0 and cfg.Ocean.Half > cfg.Island.SemiX)
 end)
 
 return true
