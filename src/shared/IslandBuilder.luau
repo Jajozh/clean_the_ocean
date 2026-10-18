@@ -63,7 +63,11 @@ local function build()
 		gui.PixelsPerStud = 50
 		gui.Adornee = part
 		local label = Instance.new("TextLabel")
-		label.Size = UDim2.fromScale(1, 1)
+		-- Верх грани Top повёрнут на 90° к взгляду с берега: крутим метку и меняем размеры местами.
+		label.Rotation = 90
+		label.AnchorPoint = Vector2.new(0.5, 0.5)
+		label.Position = UDim2.fromScale(0.5, 0.5)
+		label.Size = UDim2.fromScale(part.Size.Z / part.Size.X, part.Size.X / part.Size.Z)
 		label.BackgroundTransparency = 1
 		label.TextScaled = true
 		label.Font = Enum.Font.GothamBold
