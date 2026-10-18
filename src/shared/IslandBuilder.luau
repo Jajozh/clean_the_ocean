@@ -1,6 +1,5 @@
--- Строит остров v2 (хаб, 6 баз, берег, пальмы) и океан в Workspace. Идемпотентно: build() можно вызывать повторно.
--- В edit-режиме Studio require кэширует модуль: чтобы перестроить после правок, вызывай build() из Clone() модуля (у клона свой кэш).
--- Перестройка в edit-режиме: клонируй папку Shared и вызови require(клон.IslandBuilder).build().
+-- Строит остров v3 (хаб, 6 баз по дуге, плавательная зона, горы и пальмы за ней) и океан в Workspace. Идемпотентно.
+-- В edit-режиме Studio require кэширует модуль: чтобы перестроить после правок, клонируй всю папку Shared и вызови require(клон.IslandBuilder).build()
 -- Зависимости берём рядом с модулем (script.Parent), а не по пути ReplicatedStorage.Shared:
 -- тогда клон всей папки Shared целиком получает свежий кэш require.
 local Shared = script.Parent
@@ -9,24 +8,25 @@ local Config = require(Shared.Config.Island)
 local Layout = require(Shared.Layout).new(Config)
 local Shape = require(Shared.IslandShape).new(Config, Layout)
 
-local GROUND_Y = 2 -- верх песка (рельеф 0); Layout считает от y = 0, всё остальное стоит на этой высоте
+local GROUND_Y = 2 -- верх песка (суша плоская); Layout считает от y = 0, всё остальное стоит на этой высоте
 local FLOOR_TOP_Y = GROUND_Y + 0.2 -- выше песка, иначе поверхности мерцают (z-fighting)
 local SLOT_HEIGHT = 1 -- центр слота на уровне песка, верх на 0.5 выше
 local SEABED_THICKNESS = 8
 local WATER_TOP_Y = -2
 local WALL_TOP_Y = 60
 local WALL_THICKNESS = 4
-local WATER_STRIP = 148 -- ширина полосы заливки воды по Z
-local BARRIER_HEIGHT = 30
+local WATER_STRIP = 150 -- ширина полосы заливки воды по Z
+local BARRIER_HEIGHT = 40 -- стены по суше
 
+local SAND_COLOR = Color3.fromRGB(232, 190, 110)
 local FLOOR_COLOR = Color3.fromRGB(124, 92, 70)
-local KIND_COLORS = {
-	beach = Color3.fromRGB(226, 170, 100),
-	grass = Color3.fromRGB(98, 150, 64),
-	hill = Color3.fromRGB(70, 120, 50),
-}
 local TRUNK_COLOR = Color3.fromRGB(120, 80, 45)
 local LEAF_COLOR = Color3.fromRGB(60, 150, 60)
+local ROCK_DARK = Color3.fromRGB(120, 105, 95)
+local ROCK_LIGHT = Color3.fromRGB(150, 140, 130)
+local SNOW_COLOR = Color3.fromRGB(245, 247, 250)
+local SNOW_HEIGHT = 40 -- от этой высоты горы со снежной шапкой
+local BARRIER_DEBUG_COLOR = Color3.fromRGB(255, 40, 40)
 local POST_COLOR = Color3.fromRGB(150, 110, 70)
 local COUNTER_COLOR = Color3.fromRGB(235, 225, 200)
 local PLATE_COLOR = Color3.fromRGB(170, 170, 170)
@@ -112,38 +112,6 @@ local function addFrontLabel(part: Part, text: string)
 	gui.Parent = part
 end
 
-local function cellOf(v: number): number
-	return math.floor(v / Config.Cell)
-end
-
-local function groundTop(cx: number, cz: number, shape): number
-	return GROUND_Y + shape:height(cx, cz) * Config.Relief.Step
-end
-
-local function buildLand(island: Folder)
-	local land = folder("Land", island)
-	local cell, step, thick = Config.Cell, Config.Relief.Step, Config.Island.Thickness
-	local runs = Shape:runs()
-	for _, r in runs do
-		local top = GROUND_Y + r.height * step
-		local sizeX = (r.cx1 - r.cx0 + 1) * cell
-		local color = KIND_COLORS[r.kind]
-		if r.kind == "hill" then
-			-- Чем выше, тем светлее.
-			color = color:Lerp(Color3.fromRGB(110, 160, 70), math.clamp(r.height / math.max(Config.Relief.MaxSteps, 1), 0, 1) * 0.5)
-		end
-		local part = makePart(
-			r.kind,
-			Vector3.new(sizeX, top + thick, cell),
-			CFrame.new((r.cx0 + r.cx1 + 1) / 2 * cell, (top - thick) / 2, (r.cz + 0.5) * cell),
-			color,
-			land
-		)
-		part.TopSurface = Enum.SurfaceType.Studs
-	end
-	return #runs
-end
-
 local function buildBases(island: Folder)
 	local bases = folder("Bases", island)
 	local slots = Layout:baseSlots()
@@ -192,7 +160,7 @@ local function buildHub(island: Folder)
 		local model = Instance.new("Model")
 		model.Name = b.id
 		model:SetAttribute("BuildingId", b.id)
-		local base = groundTop(cellOf(b.x), cellOf(b.z), Shape) -- верх земли под зданием
+		local base = GROUND_Y -- верх земли под зданием
 		local front = b.z + b.sizeZ / 2
 
 		makePart("Plate", Vector3.new(b.sizeX, 1, b.sizeZ), CFrame.new(b.x, base + 0.5, b.z), PLATE_COLOR, model)
@@ -272,88 +240,146 @@ local function buildSpawns(island: Folder)
 	end
 end
 
+local function buildLand(island: Folder)
+	local land = folder("Land", island)
+	local cell, thick = Config.Cell, Config.Island.Thickness
+	local runs = Shape:runs()
+	for _, r in runs do
+		local part = makePart(
+			"Sand",
+			Vector3.new((r.cx1 - r.cx0 + 1) * cell, GROUND_Y + thick, cell),
+			CFrame.new((r.cx0 + r.cx1 + 1) / 2 * cell, (GROUND_Y - thick) / 2, (r.cz + 0.5) * cell),
+			SAND_COLOR,
+			land
+		)
+		part.TopSurface = Enum.SurfaceType.Studs
+	end
+	return #runs
+end
+
+local function decor(part: Part)
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+end
+
+local function buildMountains(island: Folder)
+	local folderM = folder("Mountains", island)
+	local list = Shape:mountains()
+	for i, m in list do
+		local tiers = if m.height < 20 then 3 elseif m.height < 40 then 4 else 5
+		local tierH = m.height / tiers
+		local yaw = (i * 37 % 90) * math.pi / 180 -- детерминированный поворот
+		local aspect = 0.75 + (i % 4) * 0.08 -- глубина относительно ширины
+		local shade = ((i * 7) % 5 - 2) * 0.03
+		local model = Instance.new("Model")
+		model.Name = "Mountain" .. i
+		local origin = CFrame.new(m.x, GROUND_Y, m.z) * CFrame.Angles(0, yaw, 0)
+		for k = 0, tiers - 1 do
+			local w = math.max(m.base * (1 - 0.8 * k / tiers), 4)
+			local color = ROCK_DARK:Lerp(ROCK_LIGHT, math.clamp(k / (tiers - 1) + shade, 0, 1))
+			if k == tiers - 1 and m.height >= SNOW_HEIGHT then
+				color = SNOW_COLOR
+			end
+			local part = makePart(
+				"Tier" .. (k + 1),
+				Vector3.new(w, tierH, w * aspect),
+				origin * CFrame.new(0, tierH * (k + 0.5), 0),
+				color,
+				model
+			)
+			decor(part)
+		end
+		model.Parent = folderM
+	end
+	return #list
+end
+
 local function buildPalms(island: Folder)
 	local palms = folder("Palms", island)
 	local list = Shape:palms()
 	for i, p in list do
-		local y0 = groundTop(cellOf(p.x), cellOf(p.z), Shape)
-		local yaw = (i * 53 % 360) * math.pi / 180 -- детерминированный поворот
-		local lean = (i % 3 - 1) * 0.5 -- наклон ствола, студов на блок
 		local blocks = 3 + i % 2
 		local scale = 1 + (i % 4) * 0.1
 		local model = Instance.new("Model")
 		model.Name = "Palm" .. i
-
-		-- Локальные смещения считаем от основания и поворачиваем вокруг него.
-		local origin = CFrame.new(p.x, y0, p.z) * CFrame.Angles(0, yaw, 0)
-		local function put(name: string, size: Vector3, off: Vector3, color: Color3, collide: boolean)
-			local part = makePart(name, size, origin * CFrame.new(off), color, model)
-			part.CanCollide = collide
+		local origin = CFrame.new(p.x, GROUND_Y, p.z)
+		local function put(name: string, size: Vector3, off: Vector3, color: Color3)
+			decor(makePart(name, size, origin * CFrame.new(off), color, model))
 		end
 
 		local trunkH = 3 * scale
 		for k = 0, blocks - 1 do
-			put("Trunk", Vector3.new(2, trunkH, 2), Vector3.new(lean * k, trunkH * (k + 0.5), 0), TRUNK_COLOR, true)
+			put("Trunk", Vector3.new(3, trunkH, 3), Vector3.new(0, trunkH * (k + 0.5), 0), TRUNK_COLOR)
 		end
 		local topY = trunkH * blocks
-		local cx = lean * (blocks - 1)
-		-- Крона крестом: четыре листа, слегка опущенных к краям, и верхний блок.
-		put("Leaf", Vector3.new(4, 1, 2), Vector3.new(cx + 3, topY + 0.5, 0), LEAF_COLOR, false)
-		put("Leaf", Vector3.new(4, 1, 2), Vector3.new(cx - 3, topY + 0.5, 0), LEAF_COLOR, false)
-		put("Leaf", Vector3.new(2, 1, 4), Vector3.new(cx, topY + 0.5, 3), LEAF_COLOR, false)
-		put("Leaf", Vector3.new(2, 1, 4), Vector3.new(cx, topY + 0.5, -3), LEAF_COLOR, false)
-		put("LeafTop", Vector3.new(3, 1, 3), Vector3.new(cx, topY + 1.5, 0), LEAF_COLOR, false)
+		-- Крона: четыре листа крестом и верхний блок.
+		put("Leaf", Vector3.new(4, 1, 3), Vector3.new(3.5, topY + 0.5, 0), LEAF_COLOR)
+		put("Leaf", Vector3.new(4, 1, 3), Vector3.new(-3.5, topY + 0.5, 0), LEAF_COLOR)
+		put("Leaf", Vector3.new(3, 1, 4), Vector3.new(0, topY + 0.5, 3.5), LEAF_COLOR)
+		put("Leaf", Vector3.new(3, 1, 4), Vector3.new(0, topY + 0.5, -3.5), LEAF_COLOR)
+		put("LeafTop", Vector3.new(3, 1, 3), Vector3.new(0, topY + 1.5, 0), LEAF_COLOR)
 		model.Parent = palms
 	end
 	return #list
 end
 
-local function buildBarrier(island: Folder)
+local function buildBarrier(island: Folder, showBarriers: boolean)
 	local barrier = folder("Barrier", island)
-	local cell = Config.Cell
-	-- Группируем клетки по строке и склеиваем соседние по cx.
+	local cell, t = Config.Cell, WALL_THICKNESS
+	local y0 = -Config.Ocean.Depth
+
+	local function wall(name: string, size: Vector3, cf: CFrame)
+		local w = makePart(name, size, cf, if showBarriers then BARRIER_DEBUG_COLOR else Color3.new(1, 1, 1), barrier)
+		w.Transparency = if showBarriers then 0.6 else 1
+		w.CanCollide = true
+		w.CanQuery = false
+		w.CanTouch = false
+	end
+
+	-- Стены по клеткам: соседние клетки одной строки склеиваем в один Part.
 	local rows: { [number]: { number } } = {}
 	for _, c in Shape:barrierCells() do
 		rows[c.cz] = rows[c.cz] or {}
 		table.insert(rows[c.cz], c.cx)
 	end
-	local function wall(cz: number, cx0: number, cx1: number)
-		-- Высоту берём по самой высокой клетке прогона.
-		local top = GROUND_Y
-		for cx = cx0, cx1 do
-			top = math.max(top, groundTop(cx, cz, Shape))
-		end
-		local w = makePart(
+	local function cellWall(cz: number, cx0: number, cx1: number)
+		wall(
 			"Barrier",
 			Vector3.new((cx1 - cx0 + 1) * cell, BARRIER_HEIGHT, cell),
-			CFrame.new((cx0 + cx1 + 1) / 2 * cell, top + BARRIER_HEIGHT / 2, (cz + 0.5) * cell),
-			Color3.new(1, 1, 1),
-			barrier
+			CFrame.new((cx0 + cx1 + 1) / 2 * cell, GROUND_Y + BARRIER_HEIGHT / 2, (cz + 0.5) * cell)
 		)
-		w.Transparency = 1
-		w.CanCollide = true
-		w.CanQuery = false
-		w.CanTouch = false
 	end
 	for cz, xs in rows do
 		table.sort(xs)
 		local start, prev = xs[1], xs[1]
 		for k = 2, #xs do
 			if xs[k] ~= prev + 1 then
-				wall(cz, start, prev)
+				cellWall(cz, start, prev)
 				start = xs[k]
 			end
 			prev = xs[k]
 		end
-		wall(cz, start, prev)
+		cellWall(cz, start, prev)
 	end
+
+	-- Стены вокруг плавательной зоны снаружи прямоугольника; север открыт.
+	local s = Layout:swim()
+	local h = WALL_TOP_Y - y0
+	local cy = (WALL_TOP_Y + y0) / 2
+	local midZ = (s.minZ + s.maxZ + t) / 2
+	local lenZ = s.maxZ - s.minZ + t
+	wall("SwimWest", Vector3.new(t, h, lenZ), CFrame.new(s.minX - t / 2, cy, midZ))
+	wall("SwimEast", Vector3.new(t, h, lenZ), CFrame.new(s.maxX + t / 2, cy, midZ))
+	wall("SwimSouth", Vector3.new(s.maxX - s.minX + 2 * t, h, t), CFrame.new((s.minX + s.maxX) / 2, cy, s.maxZ + t / 2))
 end
 
 local function buildOcean()
 	local oc = Config.Ocean
 	local ocean = folder("Ocean", workspace)
+	local cz0 = Config.Island.CenterZ
 	local minX, maxX = -oc.Half, oc.Half
-	local minZ, maxZ = Config.Hub.z - oc.Half, Config.Hub.z + oc.Half
+	local minZ, maxZ = cz0 - oc.Half, cz0 + oc.Half
 	local y0 = -oc.Depth
 	local wallH = WALL_TOP_Y - y0
 	local wallCY = (WALL_TOP_Y + y0) / 2
@@ -401,8 +427,9 @@ local function countParts(root: Instance): number
 	return n
 end
 
-local function build()
+local function build(options: { showBarriers: boolean? }?)
 	local started = os.clock()
+	local showBarriers = options ~= nil and options.showBarriers == true
 
 	-- Идемпотентность: убираем старое и шаблонные Baseplate/SpawnLocation.
 	for _, name in { "Island", "Ocean", "Baseplate", "SpawnLocation" } do
@@ -419,14 +446,23 @@ local function build()
 	buildBases(island)
 	buildHub(island)
 	buildSpawns(island)
+	local mountainCount = buildMountains(island)
 	local palmCount = buildPalms(island)
-	buildBarrier(island)
+	buildBarrier(island, showBarriers)
 	island.Parent = workspace
 
 	buildOcean()
 
+	local barriers = #island.Barrier:GetChildren()
 	local parts = countParts(island) + countParts(workspace:FindFirstChild("Ocean"))
-	return { parts = parts, seconds = os.clock() - started, landRuns = landRuns, palms = palmCount }
+	return {
+		parts = parts,
+		seconds = os.clock() - started,
+		landRuns = landRuns,
+		palms = palmCount,
+		mountains = mountainCount,
+		barriers = barriers,
+	}
 end
 
 return { build = build }
