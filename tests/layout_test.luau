@@ -141,3 +141,5 @@ test("ocean: starts right at the island's front edge", function()
 	assert(layout:islandBounds().maxZ == cfg.Island.FrontZ)
 	assert(cfg.Ocean.Depth > 0 and cfg.Ocean.Length > 0)
 end)
+
+return true
