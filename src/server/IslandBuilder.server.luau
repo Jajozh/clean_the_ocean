@@ -6,6 +6,7 @@ local Layout = require(ReplicatedStorage.Shared.Layout).new(Config)
 
 local SAND_COLOR = Color3.fromRGB(226, 205, 150)
 local FLOOR_COLOR = Color3.fromRGB(124, 92, 70)
+local FLOOR_TOP_Y = 0.2 -- выше песка (y = 0), иначе поверхности мерцают (z-fighting)
 local SEABED_THICKNESS = 8
 local WATER_TOP_Y = -2
 local WALL_TOP_Y = 60
@@ -97,7 +98,7 @@ for i = 1, Config.MaxPlayers do
 	makePart(
 		"Floor",
 		Vector3.new(Config.Base.Width, 1, Config.Base.Depth),
-		Vector3.new(bp.x, -0.5, bp.z),
+		Vector3.new(bp.x, FLOOR_TOP_Y - 0.5, bp.z),
 		FLOOR_COLOR,
 		model
 	)
