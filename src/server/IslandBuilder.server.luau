@@ -6,12 +6,13 @@ local Layout = require(ReplicatedStorage.Shared.Layout).new(Config)
 
 local SAND_COLOR = Color3.fromRGB(226, 205, 150)
 local FLOOR_COLOR = Color3.fromRGB(124, 92, 70)
-local FLOOR_TOP_Y = 0.2 -- выше песка (y = 0), иначе поверхности мерцают (z-fighting)
+local GROUND_Y = 2 -- верх песка; Layout считает от y = 0, всё остальное стоит на этой высоте
+local FLOOR_TOP_Y = GROUND_Y + 0.2 -- выше песка, иначе поверхности мерцают (z-fighting)
 local SEABED_THICKNESS = 8
 local WATER_TOP_Y = -2
 local WALL_TOP_Y = 60
 local WALL_THICKNESS = 4
-local SLOT_HEIGHT = 1 -- верх слота на y = 0.5, то есть центр на y = 0
+local SLOT_HEIGHT = 1 -- центр слота на уровне песка, верх на 0.5 выше
 
 local SLOT_COLORS = {
 	Showcase = Color3.fromRGB(150, 210, 255),
@@ -72,12 +73,12 @@ end
 local island = Instance.new("Folder")
 island.Name = "Island"
 
--- Остров: сплошной блок до дна, верх на y = 0.
+-- Остров: сплошной блок до дна, верх на y = GROUND_Y.
 local isl = Config.Island
 local sand = makePart(
 	"Sand",
-	Vector3.new(isl.Width, isl.Thickness, isl.FrontZ - isl.BackZ),
-	Vector3.new(0, -isl.Thickness / 2, (isl.FrontZ + isl.BackZ) / 2),
+	Vector3.new(isl.Width, isl.Thickness + GROUND_Y, isl.FrontZ - isl.BackZ),
+	Vector3.new(0, (GROUND_Y - isl.Thickness) / 2, (isl.FrontZ + isl.BackZ) / 2),
 	SAND_COLOR,
 	island
 )
@@ -109,7 +110,7 @@ for i = 1, Config.MaxPlayers do
 		local part = makePart(
 			slot.name,
 			Vector3.new(slot.sizeX, SLOT_HEIGHT, slot.sizeZ),
-			Vector3.new(wp.x, 0, wp.z),
+			Vector3.new(wp.x, wp.y + GROUND_Y, wp.z),
 			SLOT_COLORS[slot.slotType],
 			model
 		)
@@ -135,7 +136,7 @@ for i = 1, Config.MaxPlayers do
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "Spawn" .. i
 	spawn.Size = Vector3.new(6, 1, 6)
-	spawn.Position = Vector3.new(sp.x, sp.y + 0.5, sp.z)
+	spawn.Position = Vector3.new(sp.x, sp.y + GROUND_Y + 0.5, sp.z)
 	spawn.Neutral = true
 	spawn.Anchored = true
 	spawn.TopSurface = Enum.SurfaceType.Smooth
