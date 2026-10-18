@@ -6,21 +6,37 @@ function Layout.new(cfg)
 	return setmetatable({ cfg = cfg }, Layout)
 end
 
--- Угол базы i от направления +Z к +X, радианы.
-function Layout:baseYaw(i: number)
+-- Фокус F в плавательной зоне: сюда смотрят все базы.
+function Layout:focus()
+	local cfg = self.cfg
+	return { x = cfg.Hub.x, z = cfg.Hub.z + cfg.Arc.R }
+end
+
+function Layout:swim()
+	local s = self.cfg.Swim
+	return { minX = -s.HalfWidth, maxX = s.HalfWidth, minZ = s.NorthZ, maxZ = s.NorthZ + s.Length }
+end
+
+-- Угол базы i, радианы (от направления на юг, к +X).
+local function angle(self, i: number)
 	local cfg = self.cfg
 	assert(i >= 1 and i <= cfg.MaxPlayers and i % 1 == 0, "base index out of range")
-	return math.rad(cfg.Arc.FirstDeg + (i - 1) * cfg.Arc.StepDeg)
+	return math.rad(cfg.Arc.Angles[i])
+end
+
+function Layout:baseYaw(i: number)
+	return -angle(self, i)
 end
 
 function Layout:baseFront(i: number)
-	local t = self:baseYaw(i)
-	return { x = math.sin(t), z = math.cos(t) }
+	local a = angle(self, i)
+	return { x = -math.sin(a), z = math.cos(a) }
 end
 
 function Layout:basePosition(i: number)
-	local cfg, f = self.cfg, self:baseFront(i)
-	return { x = cfg.Hub.x + cfg.Arc.R * f.x, y = 0, z = cfg.Hub.z + cfg.Arc.R * f.z }
+	local a, f = angle(self, i), self:focus()
+	local R = self.cfg.Arc.R
+	return { x = f.x + R * math.sin(a), y = 0, z = f.z - R * math.cos(a) }
 end
 
 function Layout:baseSlots()
